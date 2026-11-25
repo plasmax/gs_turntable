@@ -23,7 +23,9 @@ loop = float(np.abs(f0 - f1).mean()) < a.loop_thresh
 print("frames", len(files), "loop closed:", loop, "diff", float(np.abs(f0 - f1).mean()))
 
 REV = "5d6b6f8adcb5b417c871b1d84ceaae9871355b7f"
-net = AutoModelForImageSegmentation.from_pretrained("ZhengPeng7/BiRefNet_HR-matting", revision=REV, trust_remote_code=True).cuda().eval().half()
+local = os.path.join(os.environ.get("GS_MODELS", ""), "birefnet_hr_matting")  # offline copy from scripts/download_models.py
+src = dict(pretrained_model_name_or_path=local) if os.environ.get("GS_MODELS") else dict(pretrained_model_name_or_path="ZhengPeng7/BiRefNet_HR-matting", revision=REV)
+net = AutoModelForImageSegmentation.from_pretrained(**src, trust_remote_code=True).cuda().eval().half()
 mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1).cuda(); std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1).cuda()
 for f in tqdm(files, mininterval=10):
     im = np.array(Image.open(f).convert("RGB")); H, W = im.shape[:2]

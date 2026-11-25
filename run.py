@@ -90,12 +90,13 @@ def acquire(session, gpus, tries=6):
 def push(session, video):
     tgz = Path(tempfile.gettempdir()) / f"{session}_up.tgz"
     with tarfile.open(tgz, "w:gz") as t:
-        t.add(HERE / "remote", "remote", filter=lambda i: None if "__pycache__" in i.name else i)
+        for d in ("pipelines", "env"):
+            t.add(HERE / d, d, filter=lambda i: None if "__pycache__" in i.name else i)
         t.add(video, "input" + Path(video).suffix.lower())
     py(session, "import os; os.makedirs('/content/gs', exist_ok=True)")
     colab("upload", "-s", session, str(tgz), "content/gs/up.tgz", capture=True)
     # LF endings matter for setup.sh when edited on Windows
-    print(py(session, "import subprocess; print(subprocess.getoutput(\"cd /content/gs && tar xzf up.tgz && sed -i 's/\\r$//' remote/*.sh && ls\"))").strip().splitlines()[-1])
+    print(py(session, "import subprocess; print(subprocess.getoutput(\"cd /content/gs && tar xzf up.tgz && sed -i 's/\\r$//' env/*.sh && ls\"))").strip().splitlines()[-1])
 
 
 def main():
@@ -107,7 +108,7 @@ def main():
     ap.add_argument("--session", default="gstt")
     ap.add_argument("--gpus", default="A100,L4", help="acceptable Colab GPUs, in order of preference")
     ap.add_argument("--keep", action="store_true", help="leave the VM running (it bills until `colab stop -s SESSION`)")
-    ap.add_argument("--train-args", default="", help='passed to remote/03_train.py, e.g. "--iters 15000 --cap 200000"')
+    ap.add_argument("--train-args", default="", help='passed to 03_train.py, e.g. "--iters 15000 --cap 200000"')
     a = ap.parse_args()
     video = Path(a.video).resolve()
     out = Path(a.out or HERE / "out" / f"{video.stem}_{a.backend}").resolve()
@@ -119,14 +120,14 @@ def main():
         try:
             acquire(a.session, a.gpus.split(","))
             push(a.session, video)
-            remote(a.session, "setup", f"BACKEND={a.backend} bash remote/setup.sh")
+            remote(a.session, "setup", f"BACKEND={a.backend} bash env/setup.sh")
             inp = "input" + video.suffix.lower()
             if "matte" in todo:
-                remote(a.session, "matte", f"rm -rf work && envs/main/bin/python remote/01_matte.py {inp} work 2>&1 | grep --line-buffered -vi warn; exit ${{PIPESTATUS[0]}}")
+                remote(a.session, "matte", f"rm -rf work && envs/main/bin/python pipelines/turntable/01_matte.py {inp} work 2>&1 | grep --line-buffered -vi warn; exit ${{PIPESTATUS[0]}}")
             if "pose" in todo:
-                pose = "envs/pi4/bin/python remote/02_pose.py" if a.backend == "pi4" else "envs/main/bin/python remote/02_pose_colmap.py"
+                pose = "envs/pi4/bin/python pipelines/turntable/02_pose_pi4.py" if a.backend == "pi4" else "envs/main/bin/python pipelines/turntable/02_pose_colmap.py"
                 remote(a.session, "pose", f"{pose} work 2>&1 | grep --line-buffered -vi warn; exit ${{PIPESTATUS[0]}}")
-            remote(a.session, "train", f"MPLBACKEND=agg envs/main/bin/python remote/03_train.py work result --pose pose_{a.backend}.npz {a.train_args} 2>&1 | grep --line-buffered -vi warn; exit ${{PIPESTATUS[0]}}")
+            remote(a.session, "train", f"MPLBACKEND=agg envs/main/bin/python pipelines/turntable/03_train.py work result --pose pose_{a.backend}.npz {a.train_args} 2>&1 | grep --line-buffered -vi warn; exit ${{PIPESTATUS[0]}}")
             for f in ("splat.ply", "compare.mp4", "orbit.mp4", "metrics.json", "cameras.npz"):
                 colab("download", "-s", a.session, f"content/gs/result/{f}", str(out / f), capture=True)
                 if not (out / f).exists():

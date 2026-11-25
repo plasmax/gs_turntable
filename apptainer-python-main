@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+image="${GS_TURNTABLE_MAIN_IMAGE:-$repo_root/containers/gs-turntable-main.sif}"
+models="${GS_TURNTABLE_MODELS:-$repo_root/models}"
+
+if [[ ! -f "$image" ]]; then
+    printf 'gs_turntable main container image not found: %s\n' "$image" >&2
+    exit 1
+fi
+if [[ ! -d "$models" ]]; then
+    printf 'Model directory not found: %s (see scripts/download_models.py)\n' "$models" >&2
+    exit 1
+fi
+
+runtime_dir="/run/user/$(id -u)"
+args=()
+if [[ -d "$runtime_dir" ]]; then
+    # VS Code/Jupyter commonly puts its kernel connection file here. Bind only
+    # the current user's directory so the container can read and write it.
+    args+=(--bind "$runtime_dir:$runtime_dir" --env "XDG_RUNTIME_DIR=$runtime_dir")
+fi
+for d in /net /job; do
+    if [[ -d "$d" ]]; then args+=(--bind "$d:$d"); fi
+done
+if [[ -n "${GS_TURNTABLE_BIND:-}" ]]; then args+=(--bind "$GS_TURNTABLE_BIND"); fi
+
+# Kernel/JIT caches must be writable; the image and the models stay read-only.
+cache="${GS_TURNTABLE_CACHE:-${TMPDIR:-/tmp}/gs-turntable-$(id -u)}"
+mkdir -p "$cache"
+
+exec apptainer exec     --nv     --cleanenv     --bind "$repo_root:$repo_root"     --bind "$models:/models:ro"     --bind "$cache:/cache"     "${args[@]}"     --pwd "$repo_root"     --env GS_MODELS=/models     --env TORCH_HOME=/models/torch     --env HF_HOME=/cache/huggingface     --env NUMBA_CACHE_DIR=/cache/numba     --env MPLCONFIGDIR=/cache/matplotlib     --env TRITON_HOME=/cache     --env TRITON_CACHE_DIR=/cache/triton     "$image"     python "$@"

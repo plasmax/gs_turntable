@@ -1,0 +1,43 @@
+Bootstrap: docker
+From: python:3.10-slim-bookworm
+
+# Matting, COLMAP poses (SIFT + LoMa) and gaussian splat training. Contains no Pi4 and no model weights.
+# Build from the repository root: sudo apptainer build gs-turntable-main.sif containers/main.def
+
+%files
+    env/main.lock /opt/main.lock
+    containers/smoke_main.py /opt/smoke.py
+
+%post
+    set -eu
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ca-certificates git ffmpeg libglib2.0-0 libgl1 libgomp1
+    rm -rf /var/lib/apt/lists/*
+
+    pip install --no-cache-dir uv==0.9.11
+    uv pip install --system --no-cache --index-strategy unsafe-best-match -r /opt/main.lock
+    # LoMa: its declared deps clash with the lock and only its CLI needs the missing ones, hence --no-deps.
+    uv pip install --system --no-cache --no-deps \
+        "lomatch @ git+https://github.com/davnords/LoMa@ecc947d44ddc9d50387e887bbedc743d65ffac00"
+    uv pip freeze --system > /opt/python-packages.txt
+
+%environment
+    export PYTHONNOUSERSITE=1
+    export PYTHONUNBUFFERED=1
+    export MPLBACKEND=agg
+    # the image is read-only and pymatting caches compiled numba code
+    export NUMBA_CACHE_DIR="${NUMBA_CACHE_DIR:-/tmp/numba-$(id -u)}"
+    export HF_HUB_OFFLINE=1
+    export TRANSFORMERS_OFFLINE=1
+    export HF_HUB_DISABLE_TELEMETRY=1
+
+%test
+    set -eu
+    ffmpeg -hide_banner -version
+    ffmpeg -hide_banner -h full 2>/dev/null | grep -q fps_mode
+    python /opt/smoke.py
+
+%help
+    Matting, COLMAP/LoMa poses and gsplat training for gs_turntable. Models are not included;
+    see scripts/download_models.py in the repository. Use ./apptainer-python-main.

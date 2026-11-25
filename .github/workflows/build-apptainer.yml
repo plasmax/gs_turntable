@@ -1,0 +1,73 @@
+name: Build Apptainer images
+
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: Which image to build
+        type: choice
+        options: [both, main, pi4]
+        default: both
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(inputs.image == 'both' && '["main","pi4"]' || format('["{0}"]', inputs.image)) }}
+    steps:
+      - name: Disk usage (before)
+        run: df -h
+
+      - name: Free disk space (aggressive)
+        run: |
+          set -euxo pipefail
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          sudo rm -rf /usr/local/.ghcup /usr/share/swift /usr/lib/jvm
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+          sudo rm -rf /tmp/*
+          docker system prune -af || true
+          df -h
+
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Apptainer
+        uses: eWaterCycle/setup-apptainer@v2
+        with:
+          apptainer-version: 1.3.6
+
+      - name: Build image without models
+        env:
+          APPTAINER_TMPDIR: /tmp
+          APPTAINER_CACHEDIR: /tmp/apptainer-cache
+        run: |
+          set -euxo pipefail
+          mkdir -p /tmp/apptainer-cache
+          sudo -E apptainer build gs-turntable-${{ matrix.image }}.sif containers/${{ matrix.image }}.def
+
+      - name: Smoke test with an isolated home
+        run: |
+          set -euxo pipefail
+          sif=gs-turntable-${{ matrix.image }}.sif
+          apptainer test --cleanenv --containall $sif
+          apptainer exec --cleanenv $sif cat /opt/python-packages.txt > gs-turntable-${{ matrix.image }}-packages.txt
+          sha256sum $sif > $sif.sha256
+          ls -lh $sif
+
+      - name: Upload image and build manifest
+        uses: actions/upload-artifact@v7
+        with:
+          name: gs-turntable-${{ matrix.image }}-sif
+          compression-level: 0
+          if-no-files-found: error
+          path: |
+            gs-turntable-${{ matrix.image }}.sif
+            gs-turntable-${{ matrix.image }}.sif.sha256
+            gs-turntable-${{ matrix.image }}-packages.txt

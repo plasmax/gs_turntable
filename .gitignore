@@ -34,3 +34,8 @@ out/
 __pycache__/
 *.pyc
 .venv/
+
+# containers and models
+*.sif
+*.sif.sha256
+/models/

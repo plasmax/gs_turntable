@@ -1,0 +1,40 @@
+Bootstrap: docker
+From: python:3.11-slim-bookworm
+
+# Pi4 pose estimation only. NON-COMMERCIAL: Pi4 code and weights are CC BY-NC 4.0. No model weights included.
+# Build from the repository root: sudo apptainer build gs-turntable-pi4.sif containers/pi4.def
+
+%labels
+    License CC-BY-NC-4.0 (Pi4)
+
+%files
+    env/pi4.lock /opt/pi4.lock
+    containers/smoke_pi4.py /opt/smoke.py
+
+%post
+    set -eu
+    apt-get update
+    # gcc and libc6-dev stay: Triton and FlexGEMM compile kernels at run time
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ca-certificates git gcc g++ libc6-dev libglib2.0-0 libgl1 libgomp1
+    rm -rf /var/lib/apt/lists/*
+
+    pip install --no-cache-dir uv==0.9.11
+    uv pip install --system --no-cache --index-strategy unsafe-best-match -r /opt/pi4.lock
+    uv pip freeze --system > /opt/python-packages.txt
+
+%environment
+    export PYTHONNOUSERSITE=1
+    export PYTHONUNBUFFERED=1
+    export HF_HUB_OFFLINE=1
+    export HF_HUB_DISABLE_TELEMETRY=1
+    export PYTORCH_ALLOC_CONF=expandable_segments:True
+
+%test
+    set -eu
+    gcc --version
+    python /opt/smoke.py
+
+%help
+    Pi4 pose estimation for gs_turntable (CC BY-NC 4.0: non-commercial). Models are not included;
+    see scripts/download_models.py in the repository. Use ./apptainer-python-pi4.
