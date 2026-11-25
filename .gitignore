@@ -1,0 +1,36 @@
+# outputs and media
+out/
+*.mp4
+*.mov
+*.webm
+*.gif
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.exr
+
+# splats, point clouds, models, arrays
+*.ply
+*.sog
+*.spz
+*.splat
+*.ksplat
+*.glb
+*.npz
+*.npy
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+*.db
+
+# archives, logs, caches
+*.tgz
+*.tar.gz
+*.zip
+*.log
+__pycache__/
+*.pyc
+.venv/
