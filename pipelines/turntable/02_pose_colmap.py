@@ -17,6 +17,8 @@ ap.add_argument("--matcher", choices=["loma", "disk"], default="loma")
 ap.add_argument("--up", type=float, default=1.5, help="DISK: upscale before feature extraction")
 ap.add_argument("--kpts", type=int, default=4096)
 ap.add_argument("--fovs", default="16,12,22,30", help="vertical FOV guesses for mapping, tried until one registers the clip")
+ap.add_argument("--stage", choices=["all", "match", "map"], default="all",
+                help="match: features and matches only (GPU); map: COLMAP mapping, focal scan and seeds from cached matches (CPU only)")
 ap.add_argument("--hull", type=float, default=0.9, help="fraction of views that must agree; below 1 tolerates pose drift")
 a = ap.parse_args()
 torch.manual_seed(0)
@@ -119,9 +121,15 @@ def match_loma():
 
 if os.path.exists(CACHE):
     kps, matches = torch.load(CACHE, weights_only=False)
+elif a.stage == "map":
+    raise SystemExit(f"{CACHE} missing: run --stage match on a GPU machine first")
 else:
     kps, matches = (match_loma if a.matcher == "loma" else match_disk)()
-    torch.save((kps, matches), CACHE)
+    torch.save((kps, matches), CACHE + ".part")
+    os.replace(CACHE + ".part", CACHE)
+if a.stage == "match":
+    print(f"matches cached in {CACHE}; mapping (CPU only) runs with --stage map")
+    raise SystemExit(0)
 torch.cuda.empty_cache()
 matches = {k: v.astype(np.uint32) for k, v in matches.items() if len(v) >= 20}
 print(f"matcher {a.matcher}: median {int(np.median([len(k) for k in kps]))} keypoints, {len(matches)}/{len(pairs)} pairs, "
@@ -216,20 +224,22 @@ def at_fov(v):
     bo.refine_extra_params = False
     bo.solver_options.max_num_iterations = 60
     pycolmap.bundle_adjustment(r, bo)
-    return r, err(r)
+    e = err(r)
+    return r, (e if math.isfinite(e) and e < 100 else math.inf)  # a diverged solve counts as no fit
 
 
 scan = {}
 for v in (8, 12, 16, 20, 26, 32):
     scan[v] = at_fov(v)[1]
-    print(f"focal scan fov {v}: {scan[v]:.4f}px", flush=True)
+    print(f"focal scan fov {v}: {scan[v]:.4f}px" if math.isfinite(scan[v]) else f"focal scan fov {v}: diverged", flush=True)
 vs = sorted(scan)
 q = min(max(vs.index(min(scan, key=scan.get)), 1), len(vs) - 2)
-co = np.polyfit(np.log(vs[q - 1:q + 2]), [scan[v] for v in vs[q - 1:q + 2]], 2)
+near = [scan[v] for v in vs[q - 1:q + 2]]
+co = np.polyfit(np.log(vs[q - 1:q + 2]), near, 2) if all(map(math.isfinite, near)) else [0, 0, 0]
 best = math.exp(-co[1] / (2 * co[0])) if co[0] > 0 else min(scan, key=scan.get)
 best = float(np.clip(best, vs[0], vs[-1]))
 rec, e = at_fov(best)
-print(f"chosen fov {best:.2f}: {e:.4f}px (scan spans {min(scan.values()):.3f}-{max(scan.values()):.3f}px, so focal is approximate)", flush=True)
+print(f"chosen fov {best:.2f}: {e:.4f}px (scan spans {min(scan.values()):.3f}-{max(v for v in scan.values() if math.isfinite(v)):.3f}px, so focal is approximate)", flush=True)
 
 # ---------- export ----------
 items = sorted(((names.index(im.name), im) for im in rec.images.values()), key=lambda t: t[0])

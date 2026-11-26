@@ -11,7 +11,8 @@ Nuke: `python scripts/export_nuke.py out/<name>` writes `cameras.nk` (a Camera2 
 
 Pause a local run with `touch OUT_DIR/STOP` and resume by rerunning the same `run_local.sh` command: finished stages are
 skipped, matting continues from the next frame and training from its checkpoint (also written every 10k iterations and at the end).
-A rerun with a larger `--iters` extends a paused or finished run; delete `train_ckpt.pt` once you no longer need that.
+`GS_TURNTABLE_STAGES` picks stages (`matte,match,map,train`); only `map` (COLMAP mapping) needs no GPU, so a farm job can
+run it on a CPU machine into the same OUT_DIR. A rerun with a larger `--iters` extends a paused or finished run; delete `train_ckpt.pt` once you no longer need that.
 
 Offline, through Apptainer instead of Colab: see [docs/apptainer.md](docs/apptainer.md). The images run on Ampere to Blackwell
 GPUs (A4000, A6000, RTX Pro 6000, ...).
