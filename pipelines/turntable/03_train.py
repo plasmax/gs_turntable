@@ -267,7 +267,7 @@ def gt(i, bg):
 
 # ---------- checkpoint / resume ----------
 CKPT, STOP = f"{a.out}/train_ckpt.pt", a.stop or f"{a.out}/STOP"
-SAME = [k for k in vars(a) if k not in ("work", "out", "stop", "ckpt_every")]  # must match to resume
+SAME = [k for k in vars(a) if k not in ("work", "out", "stop", "ckpt_every", "iters")]  # must match to resume
 
 
 def save_ckpt(it):
@@ -284,23 +284,29 @@ if os.path.exists(CKPT):
     diff = {k: (ck["args"].get(k), getattr(a, k)) for k in SAME if ck["args"].get(k) != getattr(a, k)}
     if diff:
         raise SystemExit(f"{CKPT} was made with other settings {diff} (saved, now); delete it to start over")
+    if ck["it"] > a.iters:
+        raise SystemExit(f"{CKPT} is already at iteration {ck['it']}, past --iters {a.iters}")
     par = nn.ParameterDict({k: nn.Parameter(v.to(dev)) for k, v in ck["par"].items()})
     opt = {k: torch.optim.Adam([par[k]], lr=lr[k], eps=1e-15) for k in par.keys()}
     for k, o in opt.items():
         o.load_state_dict(ck["opt"][k])
     sched = torch.optim.lr_scheduler.ExponentialLR(opt["means"], 0.01 ** (1 / a.iters))
-    sched.load_state_dict(ck["sched"])
     strat.check_sanity(par, opt)
     st = {k: v.to(dev) if torch.is_tensor(v) else v for k, v in ck["st"].items()}
     fr.load_state_dict(ck["fr"])
     fopt.load_state_dict(ck["fopt"])
-    fsched.load_state_dict(ck["fsched"])
     rng.bit_generator.state = ck["rng"]
     torch.set_rng_state(ck["torch_rng"])
     torch.cuda.set_rng_state(ck["cuda_rng"])
     start = ck["it"]
     del ck
-    print(f"resumed at iteration {start} with {len(par['means'])} gaussians", flush=True)
+    # learning rates where a run of this --iters would be now: equal to the saved ones when --iters is unchanged,
+    # and a longer run (more --iters than before) carries on as if it had been planned that long
+    for o, decay, sc in ((opt["means"], 0.01, sched), (fopt, 0.05, fsched)):
+        for g in o.param_groups:
+            g["lr"] = g["initial_lr"] * decay ** (start / a.iters)
+        sc.last_epoch, sc._last_lr = start, [g["lr"] for g in o.param_groups]
+    print(f"resumed at iteration {start} of {a.iters} with {len(par['means'])} gaussians", flush=True)
 
 # ---------- train ----------
 t0 = time.time()
@@ -354,6 +360,12 @@ for it in range(start, a.iters):
     if it % 1000 == 0:
         mdx = 0 if dx is None else dx.norm(dim=-1).mean().item()
         print(f"it {it} loss {loss.item():.4f} n={len(par['means'])} focal x{fr.lf.exp().item():.4f} rot={np.degrees(fr.rot.norm(dim=-1).mean().item()):.3f}deg trn={fr.trn.norm(dim=-1).mean().item():.4f} |dx|={mdx:.4f} peak {torch.cuda.max_memory_allocated() / 2**30:.1f}GB {time.time()-t0:.0f}s", flush=True)
+
+
+if start < a.iters:  # kept (GBs at millions of gaussians): a rerun with a larger --iters continues from here
+    save_ckpt(a.iters)
+elif start == a.iters:
+    print(f"training already at {a.iters} iterations; re-exporting", flush=True)
 
 
 # ---------- evaluate ----------
@@ -431,7 +443,4 @@ with torch.no_grad():
         r = render(R, t, None, bg=bg, focal=fpx, size=(720, 720), pp=(360, 360))[0].clamp(0, 1)
         wr.append_data((r.cpu().numpy() * 255).astype(np.uint8))
     wr.close()
-open(f"{a.out}/.train_done", "w").close()  # run_local.sh skips training on a rerun
-if os.path.exists(CKPT):
-    os.remove(CKPT)  # finished: the checkpoint (several GB at millions of gaussians) is no longer needed
 print("saved", a.out, len(arr))

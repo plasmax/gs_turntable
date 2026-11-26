@@ -3,8 +3,9 @@
 #   ./run_local.sh VIDEO|SEQ.####.png OUT_DIR [colmap|pi4] [03_train.py flags...]
 # Pause: touch OUT_DIR/STOP. Matting stops after the current frame, training checkpoints, and the run exits 75.
 # Resume: run the same command again; finished stages are skipped and training continues from its checkpoint.
+# Extend: rerun into the same OUT_DIR with a larger --iters (other training flags must match).
 set -euo pipefail
-if [[ $# -lt 2 ]]; then sed -n '2,5p' "${BASH_SOURCE[0]}"; exit 2; fi
+if [[ $# -lt 2 ]]; then sed -n '2,6p' "${BASH_SOURCE[0]}"; exit 2; fi
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 video="$(realpath "$1")"
 mkdir -p "$2"; out="$(realpath "$2")"
@@ -40,10 +41,7 @@ else
     stage "$here/apptainer-python-main" $p/02_pose_colmap.py "$out/work"
 fi
 between training
-if [[ -f $out/.train_done ]]; then
-    echo "train: done, skipping"
-else
-    stage "$here/apptainer-python-main" $p/03_train.py "$out/work" "$out" --pose "pose_$backend.npz" --stop "$stop" "$@"
-fi
+# always run: it continues from its checkpoint, and a finished run only re-exports (or extends, given more --iters)
+stage "$here/apptainer-python-main" $p/03_train.py "$out/work" "$out" --pose "pose_$backend.npz" --stop "$stop" "$@"
 "$here/apptainer-python-main" scripts/export_nuke.py "$out"
 echo "done: $out/splat.ply, Nuke camera: $out/cameras.nk"
