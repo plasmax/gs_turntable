@@ -33,8 +33,19 @@ ap.add_argument("--holdout", type=int, default=0, help="hold out every Nth frame
 ap.add_argument("--seed", type=int, default=0)
 ap.add_argument("--stop", help="pause file: when it appears, checkpoint and exit 75; rerun to resume (default OUT/STOP)")
 ap.add_argument("--ckpt_every", type=int, default=10000, help="also checkpoint every N iterations (0: only on pause)")
+ap.add_argument("--export_only", action="store_true",
+                help="no training: render previews, metrics and splat.ply from OUT/train_ckpt.pt, with the settings it was made with")
 a = ap.parse_args()
 os.makedirs(a.out, exist_ok=True)
+if a.export_only:
+    if not os.path.exists(f"{a.out}/train_ckpt.pt"):
+        raise SystemExit(f"--export_only needs {a.out}/train_ckpt.pt")
+    head = torch.load(f"{a.out}/train_ckpt.pt", map_location="cpu", weights_only=False, mmap=True)
+    for k, v in head["args"].items():
+        setattr(a, k, v)
+    a.iters = head["it"]
+    del head
+    print(f"export only, from the checkpoint at iteration {a.iters}", flush=True)
 torch.manual_seed(a.seed)
 np.random.seed(a.seed)
 rng = np.random.default_rng(a.seed)
@@ -267,7 +278,7 @@ def gt(i, bg):
 
 # ---------- checkpoint / resume ----------
 CKPT, STOP = f"{a.out}/train_ckpt.pt", a.stop or f"{a.out}/STOP"
-SAME = [k for k in vars(a) if k not in ("work", "out", "stop", "ckpt_every", "iters")]  # must match to resume
+SAME = [k for k in vars(a) if k not in ("work", "out", "stop", "ckpt_every", "iters", "export_only")]  # must match to resume
 
 
 def save_ckpt(it):
@@ -281,7 +292,7 @@ def save_ckpt(it):
 start = 0
 if os.path.exists(CKPT):
     ck = torch.load(CKPT, map_location="cpu", weights_only=False)  # optimizers place their state; steps stay on CPU
-    diff = {k: (ck["args"].get(k), getattr(a, k)) for k in SAME if ck["args"].get(k) != getattr(a, k)}
+    diff = {k: (ck["args"].get(k), getattr(a, k)) for k in SAME if k in ck["args"] and ck["args"][k] != getattr(a, k)}
     if diff:
         raise SystemExit(f"{CKPT} was made with other settings {diff} (saved, now); delete it to start over")
     if ck["it"] > a.iters:

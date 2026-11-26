@@ -6,7 +6,8 @@
 # must repeat them, except that a larger --iters extends the run.
 # --stages: comma list of matte,match,map,train (default all). Only "map" (COLMAP mapping, ~15 min) needs no GPU, so a
 # farm job can run matte,match on a GPU machine, map on a CPU machine and train on a GPU machine, all into one OUT_DIR.
-# Pause:  touch OUT_DIR/STOP   (training checkpoints within ~100 iterations, then the job exits 75)
+# Pause:  touch OUT_DIR/STOP   (training checkpoints within ~100 iterations, then the job ends with exit 0)
+# Preview a paused or running job's checkpoint on another GPU: scripts/preview_checkpoint.sh OUT_DIR
 # Resume: run this script again with the same backend and that OUT_DIR; finished stages are skipped.
 # colmap (default) is commercially usable; pi4 is CC BY-NC 4.0, non-commercial.
 # Writes splat.ply, cameras.nk, splat_yup.ply, metrics.json and run.log into OUT_DIR.
@@ -53,7 +54,10 @@ main() {  # parsed whole before it runs, so a git pull during a job cannot cut i
         ./apptainer-python-main scripts/download_models.py /models --check
     fi
 
-    time ./run_local.sh "$seq" "$out" "$backend" --cap 3000000 --iters 60000 --sh 3 --lam_lpips 0.2 --holdout 8 ${args[@]+"${args[@]}"}
+    local rc=0
+    time ./run_local.sh "$seq" "$out" "$backend" --cap 3000000 --iters 60000 --sh 3 --lam_lpips 0.2 --holdout 8 ${args[@]+"${args[@]}"} || rc=$?
+    if [[ $rc == 75 ]]; then echo "paused cleanly (exit 0 for the farm)"; exit 0; fi
+    exit $rc
 }
 main "$@"
 exit
