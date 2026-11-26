@@ -1,8 +1,8 @@
-"""Video -> frames -> soft alpha (BiRefNet HR matting) -> decontaminated RGBA.
+"""Video or image sequence (path with ####, e.g. shot.####.png) -> frames -> soft alpha (BiRefNet HR matting) -> decontaminated RGBA.
 
 out/rgba/%04d.png  straight-alpha foreground   out/grey/%04d.png  fg on flat grey (pose input)
 """
-import argparse, subprocess, glob, os, json
+import argparse, subprocess, glob, os, json, re
 import numpy as np, cv2, torch
 from PIL import Image
 from tqdm import tqdm
@@ -16,7 +16,16 @@ ap.add_argument("--loop_thresh", type=float, default=4.0, help="mean abs diff un
 a = ap.parse_args()
 for d in ("raw", "rgba", "grey"):
     os.makedirs(f"{a.out}/{d}", exist_ok=True)
-subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", a.video, "-fps_mode", "passthrough", f"{a.out}/raw/%04d.png"], check=True)
+src = ["-i", a.video]
+if "#" in a.video:  # image sequence: #### -> %04d, starting at the first frame on disk
+    seq = sorted(glob.glob(re.sub("#+", lambda m: "[0-9]" * len(m.group()), a.video, count=1)))
+    if not seq:
+        raise SystemExit("no frames match " + a.video)
+    pre, digits, post = re.match(r"(.*?)(#+)(.*)$", a.video).groups()  # first run of #s
+    start = int(seq[0][len(pre):len(seq[0]) - len(post)])
+    src = ["-start_number", str(start), "-i", pre + "%%0%dd" % len(digits) + post]
+    print("sequence", seq[0], "...", os.path.basename(seq[-1]), len(seq), "frames")
+subprocess.run(["ffmpeg", "-v", "error", "-y", *src, "-fps_mode", "passthrough", "-pix_fmt", "rgb24", f"{a.out}/raw/%04d.png"], check=True)
 files = sorted(glob.glob(f"{a.out}/raw/*.png"))
 f0, f1 = (cv2.imread(files[i]).astype(np.float32) for i in (0, -1))
 loop = float(np.abs(f0 - f1).mean()) < a.loop_thresh

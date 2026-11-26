@@ -25,7 +25,8 @@ from pi4 import Pi4
 local = os.environ.get("GS_MODELS") and os.path.join(os.environ["GS_MODELS"], "pi4")  # offline copy from scripts/download_models.py
 net = (Pi4.from_pretrained(local) if local else Pi4.from_pretrained("yyfz233/Pi4", revision="59f307317fb630c9c5a5aa635038d98ed106aaf5")).cuda().eval()
 x = torch.from_numpy(rgb.copy()).permute(0, 3, 1, 2).float().div(255)[None].cuda()
-p = net(x)
+with torch.inference_mode():  # no autograd graph: 125+ frames fit a 16 GB card
+    p = net(x)
 lp = p["local_points"][0].float().cpu().numpy(); c2w = p["camera_poses"][0].float().cpu().numpy(); conf = p["confidence"][0].float().cpu().numpy()
 # shared focal (px @ sz) by robust fit of u = f X/Z + c on the object
 v, u = np.mgrid[0:sz, 0:sz].astype(np.float32); c = (sz - 1) / 2

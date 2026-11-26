@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run the turntable pipeline on a Linux GPU box through the Apptainer images. No network needed.
-#   ./run_local.sh VIDEO OUT_DIR [colmap|pi4] [03_train.py flags...]
+#   ./run_local.sh VIDEO|SEQ.####.png OUT_DIR [colmap|pi4] [03_train.py flags...]
 set -euo pipefail
 if [[ $# -lt 2 ]]; then sed -n '2,3p' "${BASH_SOURCE[0]}"; exit 2; fi
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

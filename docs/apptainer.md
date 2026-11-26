@@ -28,6 +28,7 @@ Copy the checkout, the `.sif` files and `models/` across, then verify: `python3 
 
     ./run_local.sh turntable.mp4 out/turntable_colmap colmap
     ./run_local.sh turntable.mp4 out/turntable_pi4 pi4
+    ./run_local.sh /path/shot.####.png out/shot_colmap colmap    # image sequence, any start frame
     ./apptainer-python-main pipelines/turntable/03_train.py --help
 
 Defaults, overridable by environment variable:
@@ -39,5 +40,6 @@ Defaults, overridable by environment variable:
 | `GS_TURNTABLE_CACHE` | `$TMPDIR/gs-turntable-$UID` (kernel and JIT caches) |
 | `GS_TURNTABLE_BIND` | extra comma-separated binds; `/net` and `/job` are bound when present |
 
-Needs an NVIDIA GPU with bfloat16 (Ampere or newer) for Pi4, and a driver for CUDA 12.4 (main) / 12.6 (pi4).
+Needs an Ampere, Ada or Hopper GPU (sm_80 to sm_90; Pi4 needs bfloat16) and a driver for CUDA 12.4 (main) / 12.6 (pi4).
+Blackwell cards (RTX 50xx, RTX Pro 6000, B200) are not supported: these torch and gsplat builds have no sm_100/sm_120 kernels.
 `splat.sog` and the HTML viewer are made by `run.py` with Node and are not produced offline; `splat.ply` loads in SuperSplat.
