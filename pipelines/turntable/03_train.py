@@ -29,6 +29,8 @@ ap.add_argument("--lam_def", type=float, default=0.001)
 ap.add_argument("--canon_frac", type=float, default=0.5,
                 help="share of iterations rendered without deformation, so the exported (undeformed) splat and the cameras "
                      "must fit the images themselves; 0 lets the deformation absorb camera and focal error")
+ap.add_argument("--focal_lr", type=float, default=1e-4,
+                help="0 keeps the pose stage's focal: at long lenses focal trades off against object size and can drift")
 ap.add_argument("--lam_alpha", type=float, default=0.3)
 ap.add_argument("--lam_lpips", type=float, default=0.1)
 ap.add_argument("--lam_depth", type=float, default=0.1)
@@ -170,7 +172,7 @@ class Frames(nn.Module):
 
 fr = Frames(N).to(dev)
 fopt = torch.optim.Adam([
-    dict(params=[fr.rot, fr.trn], lr=2e-4), dict(params=[fr.lf], lr=1e-4), dict(params=[fr.code], lr=2e-3),
+    dict(params=[fr.rot, fr.trn], lr=2e-4), dict(params=[fr.lf], lr=a.focal_lr), dict(params=[fr.code], lr=2e-3),
     dict(params=fr.mlp.parameters(), lr=5e-4), dict(params=[fr.col], lr=2e-3)])
 fsched = torch.optim.lr_scheduler.ExponentialLR(fopt, 0.05 ** (1 / a.iters))
 c2w_t = torch.tensor(c2w, dtype=torch.float32, device=dev)
