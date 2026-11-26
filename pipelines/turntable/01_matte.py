@@ -1,4 +1,4 @@
-"""Video or image sequence (path with ####, e.g. shot.####.png) -> frames -> soft alpha (BiRefNet HR matting) -> decontaminated RGBA.
+"""Video or image sequence (path with #### or %04d, e.g. shot.####.png) -> frames -> soft alpha (BiRefNet HR matting) -> decontaminated RGBA.
 
 out/rgba/%04d.png  straight-alpha foreground   out/grey/%04d.png  fg on flat grey (pose input)
 """
@@ -14,6 +14,7 @@ ap.add_argument("video"); ap.add_argument("out")
 ap.add_argument("--res", type=int, default=2048)
 ap.add_argument("--loop_thresh", type=float, default=4.0, help="mean abs diff under which the last frame is a repeat of the first")
 a = ap.parse_args()
+a.video = re.sub(r"%0?(\d*)d", lambda m: "#" * int(m.group(1) or 1), a.video, count=1)  # shot.%04d.png == shot.####.png
 for d in ("raw", "rgba", "grey"):
     os.makedirs(f"{a.out}/{d}", exist_ok=True)
 src = ["-i", a.video]
