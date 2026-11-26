@@ -3,7 +3,10 @@ import ctypes, glob, os, sys, tempfile
 import cv2, imageio, kornia, lpips, numpy as np, plyfile, pycolmap, pymatting, scipy, timm, torch, torchvision, transformers
 import gsplat
 
-assert torch.version.cuda == "12.4", torch.version.cuda
+assert torch.version.cuda == "12.8", torch.version.cuda
+archs = torch._C._cuda_getArchFlags().split()  # compiled-in kernels; get_arch_list() is empty without a GPU
+for arch in ("sm_86", "sm_120"):  # A4000/A6000, RTX Pro 6000
+    assert arch in archs, (arch, archs)
 from gsplat import csrc  # the prebuilt CUDA extension must load; otherwise gsplat would try to compile one at runtime
 import loma.loma as L
 assert L.LoMaB and L.filter_matches

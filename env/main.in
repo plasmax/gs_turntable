@@ -1,8 +1,6 @@
---find-links https://docs.gsplat.studio/whl/gsplat/
---extra-index-url https://download.pytorch.org/whl/cu124
-torch==2.4.1+cu124
-torchvision==0.19.1+cu124
-gsplat==1.5.3+pt24cu124
+--extra-index-url https://download.pytorch.org/whl/cu128
+torch==2.7.1+cu128
+torchvision==0.22.1+cu128
 numpy==1.26.4
 scipy==1.13.1
 pymatting==1.1.13

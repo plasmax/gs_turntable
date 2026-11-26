@@ -308,7 +308,7 @@ for it in range(a.iters):
     fsched.step()
     if it % 1000 == 0:
         mdx = 0 if dx is None else dx.norm(dim=-1).mean().item()
-        print(f"it {it} loss {loss.item():.4f} n={len(par['means'])} focal x{fr.lf.exp().item():.4f} rot={np.degrees(fr.rot.norm(dim=-1).mean().item()):.3f}deg trn={fr.trn.norm(dim=-1).mean().item():.4f} |dx|={mdx:.4f} {time.time()-t0:.0f}s", flush=True)
+        print(f"it {it} loss {loss.item():.4f} n={len(par['means'])} focal x{fr.lf.exp().item():.4f} rot={np.degrees(fr.rot.norm(dim=-1).mean().item()):.3f}deg trn={fr.trn.norm(dim=-1).mean().item():.4f} |dx|={mdx:.4f} peak {torch.cuda.max_memory_allocated() / 2**30:.1f}GB {time.time()-t0:.0f}s", flush=True)
 
 
 # ---------- evaluate ----------
@@ -333,6 +333,8 @@ if a.holdout:
     ev["heldout_canonical"] = evaluate(np.where(test)[0], True, False)
     ev["heldout_deformed"] = evaluate(np.where(test)[0], True, True)
 ev["n_gaussians"] = len(par["means"])
+ev["peak_gpu_gb"] = round(torch.cuda.max_memory_allocated() / 2**30, 2)
+ev["gpu"] = torch.cuda.get_device_name()
 print(json.dumps(ev, indent=1))
 ev["args"] = vars(a)
 json.dump(ev, open(f"{a.out}/metrics.json", "w"), indent=1)
@@ -363,7 +365,7 @@ with torch.no_grad():
     PlyData([PlyElement.describe(rec, "vertex")]).write(f"{a.out}/splat.ply")
     cams2 = cams.copy()
     cams2[:, :3, 3] += off
-    np.savez(f"{a.out}/cameras.npz", c2w=cams2, focal=fpx, W=W, H=H, idx=idx)
+    np.savez(f"{a.out}/cameras.npz", c2w=cams2, focal=fpx, W=W, H=H, idx=idx, first=meta.get("start", 1))
 
     bg = torch.full((3,), .5, device=dev)
     kw = dict(quality=9, macro_block_size=2)

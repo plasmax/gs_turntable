@@ -1,5 +1,37 @@
 Bootstrap: docker
+From: nvidia/cuda:12.8.1-devel-ubuntu22.04
+Stage: build
+
+# Build stage: compiles gsplat's CUDA kernels for every supported GPU generation (one image runs on A4000, A6000,
+# RTX Pro 6000, ...). Only the wheel is carried into the final image, not the CUDA toolkit.
+
+%files
+    env/main.lock /opt/main.lock
+    env/build_gsplat.sh /opt/build_gsplat.sh
+
+%post
+    set -eu
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ca-certificates curl python3.10 python3.10-dev python3.10-venv
+    python3.10 -m venv /opt/uv && /opt/uv/bin/pip install --no-cache-dir uv==0.9.11
+    export PATH=/opt/uv/bin:$PATH
+    uv venv -q --python /usr/bin/python3.10 /opt/b
+    # torch and the build tools at the lock's versions, so the extension matches the final image's torch
+    uv pip install -q --python /opt/b/bin/python --no-cache --index-strategy unsafe-best-match \
+        --extra-index-url https://download.pytorch.org/whl/cu128 -c /opt/main.lock torch numpy setuptools ninja
+    bash /opt/build_gsplat.sh /opt/b/bin/python /opt/wheels
+    # fail the build if a GPU generation we promise is missing from the binary
+    cd /tmp && /opt/b/bin/python -m zipfile -e /opt/wheels/gsplat-*.whl gs
+    so=$(ls gs/gsplat/csrc*.so)
+    cuobjdump --list-elf "$so" | grep -o 'sm_[0-9]*' | sort -u | tr '\n' ' '; echo
+    for a in sm_80 sm_86 sm_89 sm_90 sm_100 sm_120; do
+        cuobjdump --list-elf "$so" | grep -q "\.$a\." || { echo "gsplat build lacks $a" >&2; exit 1; }
+    done
+
+Bootstrap: docker
 From: python:3.10-slim-bookworm
+Stage: final
 
 # Matting, COLMAP poses (SIFT + LoMa) and gaussian splat training. Contains no Pi4 and no model weights.
 # Build from the repository root: sudo apptainer build gs-turntable-main.sif containers/main.def
@@ -7,6 +39,9 @@ From: python:3.10-slim-bookworm
 %files
     env/main.lock /opt/main.lock
     containers/smoke_main.py /opt/smoke.py
+
+%files from build
+    /opt/wheels /opt/wheels
 
 %post
     set -eu
@@ -17,6 +52,7 @@ From: python:3.10-slim-bookworm
 
     pip install --no-cache-dir uv==0.9.11
     uv pip install --system --no-cache --index-strategy unsafe-best-match -r /opt/main.lock
+    uv pip install --system --no-cache --no-deps /opt/wheels/gsplat-*.whl
     # LoMa: its declared deps clash with the lock and only its CLI needs the missing ones, hence --no-deps.
     uv pip install --system --no-cache --no-deps \
         "lomatch @ git+https://github.com/davnords/LoMa@ecc947d44ddc9d50387e887bbedc743d65ffac00"
@@ -31,6 +67,7 @@ From: python:3.10-slim-bookworm
     export HF_HUB_OFFLINE=1
     export TRANSFORMERS_OFFLINE=1
     export HF_HUB_DISABLE_TELEMETRY=1
+    export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 %test
     set -eu
@@ -41,3 +78,4 @@ From: python:3.10-slim-bookworm
 %help
     Matting, COLMAP/LoMa poses and gsplat training for gs_turntable. Models are not included;
     see scripts/download_models.py in the repository. Use ./apptainer-python-main.
+    Runs on Ampere to Blackwell GPUs (sm_80 to sm_120) with an NVIDIA driver for CUDA 12.8 (R570 or newer).

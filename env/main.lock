@@ -1,13 +1,11 @@
 --index-url https://pypi.org/simple
---extra-index-url https://download.pytorch.org/whl/cu124
---find-links https://docs.gsplat.studio/whl/gsplat/
+--extra-index-url https://download.pytorch.org/whl/cu128
 
 certifi==2026.11.20
 charset-normalizer==3.5.3
 einops==0.8.0
 filelock==4.1.0
 fsspec==2026.9.0
-gsplat==1.5.3+pt24cu124
 huggingface-hub==0.26.2
 idna==3.20
 imageio==2.36.0
@@ -26,18 +24,20 @@ networkx==3.4.2
 ninja==1.11.1
 numba==0.68.1
 numpy==1.26.4
-nvidia-cublas-cu12==12.4.2.65
-nvidia-cuda-cupti-cu12==12.4.99
-nvidia-cuda-nvrtc-cu12==12.4.99
-nvidia-cuda-runtime-cu12==12.4.99
-nvidia-cudnn-cu12==9.1.0.70
-nvidia-cufft-cu12==11.2.0.44
-nvidia-curand-cu12==10.3.5.119
-nvidia-cusolver-cu12==11.6.0.99
-nvidia-cusparse-cu12==12.3.0.142
-nvidia-nccl-cu12==2.20.5
-nvidia-nvjitlink-cu12==12.4.99
-nvidia-nvtx-cu12==12.4.99
+nvidia-cublas-cu12==12.8.3.14
+nvidia-cuda-cupti-cu12==12.8.57
+nvidia-cuda-nvrtc-cu12==12.8.61
+nvidia-cuda-runtime-cu12==12.8.57
+nvidia-cudnn-cu12==9.7.1.26
+nvidia-cufft-cu12==11.3.3.41
+nvidia-cufile-cu12==1.13.0.11
+nvidia-curand-cu12==10.3.9.55
+nvidia-cusolver-cu12==11.7.2.55
+nvidia-cusparse-cu12==12.5.7.53
+nvidia-cusparselt-cu12==0.6.3
+nvidia-nccl-cu12==2.26.2
+nvidia-nvjitlink-cu12==12.8.61
+nvidia-nvtx-cu12==12.8.55
 opencv-python-headless==4.10.0.84
 packaging==26.4
 pillow==10.4.0
@@ -56,11 +56,11 @@ setuptools==75.6.0
 sympy==1.14.0
 timm==1.0.11
 tokenizers==0.20.3
-torch==2.4.1+cu124
-torchvision==0.19.1+cu124
+torch==2.7.1+cu128
+torchvision==0.22.1+cu128
 tqdm==4.66.5
 transformers==4.46.3
-triton==3.0.0
+triton==3.3.1
 typeguard==2.13.3
 typing-extensions==4.16.0
 urllib3==2.8.0

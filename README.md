@@ -6,8 +6,11 @@
 Needs `colab` (google-colab-cli, logged in), Python 3.9+ and Node. All GPU work runs on a Colab VM, which is released at the end.
 Outputs land in `out/<video name>_<backend>/`: `splat.ply`, `splat.sog`, `splat.html` (viewer), `compare.mp4` (source | splat),
 `orbit.mp4` (free orbit), `metrics.json`, `cameras.npz`.
+Nuke: `python scripts/export_nuke.py out/<name>` writes `cameras.nk` (a Camera2 node to paste), `cameras.chan` and
+`splat_yup.ply`, the splat turned into Nuke's Y-up world so it lines up with that camera (`run_local.sh` does this itself).
 
-Offline, through Apptainer instead of Colab: see [docs/apptainer.md](docs/apptainer.md).
+Offline, through Apptainer instead of Colab: see [docs/apptainer.md](docs/apptainer.md). The images run on Ampere to Blackwell
+GPUs (A4000, A6000, RTX Pro 6000, ...).
 
 | Path | What |
 |---|---|
@@ -20,6 +23,7 @@ Offline, through Apptainer instead of Colab: see [docs/apptainer.md](docs/apptai
 | `env/` | lock files shared by Colab and the images |
 | `containers/`, `.github/workflows/` | Apptainer definitions and the manual build |
 | `scripts/download_models.py` | pinned, checksummed model download |
+| `scripts/export_nuke.py` | cameras to a Nuke Camera2 node and .chan, plus a Y-up copy of the splat |
 
 Options: `--keep` leaves the VM up (it bills until `colab stop -s gstt`); `--stage train` restarts there on a kept VM;
 `--train-args "--iters 12000 --holdout 8"` passes trainer flags (`--holdout 8` adds held-out metrics).

@@ -40,6 +40,12 @@ Defaults, overridable by environment variable:
 | `GS_TURNTABLE_CACHE` | `$TMPDIR/gs-turntable-$UID` (kernel and JIT caches) |
 | `GS_TURNTABLE_BIND` | extra comma-separated binds; `/net` and `/job` are bound when present |
 
-Needs an Ampere, Ada or Hopper GPU (sm_80 to sm_90; Pi4 needs bfloat16) and a driver for CUDA 12.4 (main) / 12.6 (pi4).
-Blackwell cards (RTX 50xx, RTX Pro 6000, B200) are not supported: these torch and gsplat builds have no sm_100/sm_120 kernels.
+One pair of images runs on every Ampere to Blackwell GPU (sm_80 to sm_120: A4000, A6000, A100, L4, RTX 4090/6000 Ada,
+H100, B200, RTX 50xx, RTX Pro 6000). The host needs an NVIDIA driver for CUDA 12.8 (main) and 12.9 (pi4), i.e. R575 or
+newer; Blackwell needs that anyway. gsplat has no prebuilt wheel for this torch, so `main.def` compiles it in a build stage
+(`env/build_gsplat.sh`, about 30 min on a GitHub runner) and fails if any of those architectures is missing.
+
+Pi4 holds every frame in one pass when it fits and otherwise splits into passes that share anchor frames (about 125
+frames at the default 672 px fit 16 GB); `--chunk N` forces a pass size. Training prints its peak GPU memory, which is the
+number to watch when raising `--cap`.
 `splat.sog` and the HTML viewer are made by `run.py` with Node and are not produced offline; `splat.ply` loads in SuperSplat.

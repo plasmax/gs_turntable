@@ -6,7 +6,10 @@ import importlib.util
 import sys
 import cv2, numpy as np, PIL, safetensors, scipy, torch, triton
 
-assert torch.version.cuda == "12.6", torch.version.cuda
+assert torch.version.cuda == "12.9", torch.version.cuda
+archs = torch._C._cuda_getArchFlags().split()  # compiled-in kernels; get_arch_list() is empty without a GPU
+for arch in ("sm_86", "sm_120"):  # A4000/A6000, RTX Pro 6000
+    assert arch in archs, (arch, archs)
 for name in ("flex_gemm", "pi4"):
     assert importlib.util.find_spec(name), f"{name} is not installed"
 assert md.version("triton") == "3.7.1"

@@ -17,6 +17,7 @@ a = ap.parse_args()
 for d in ("raw", "rgba", "grey"):
     os.makedirs(f"{a.out}/{d}", exist_ok=True)
 src = ["-i", a.video]
+start = 1  # frame number of the first frame, as a Nuke Read numbers it
 if "#" in a.video:  # image sequence: #### -> %04d, starting at the first frame on disk
     seq = sorted(glob.glob(re.sub("#+", lambda m: "[0-9]" * len(m.group()), a.video, count=1)))
     if not seq:
@@ -52,4 +53,4 @@ for f in tqdm(files, mininterval=10):
     Image.fromarray((rgba * 255 + .5).astype(np.uint8)).save(f"{a.out}/rgba/{b}")
     g = fg * al[..., None] + 0.5 * (1 - al[..., None])
     Image.fromarray((np.clip(g, 0, 1) * 255 + .5).astype(np.uint8)).save(f"{a.out}/grey/{b}")
-json.dump(dict(n=len(files), loop=loop, W=W, H=H), open(f"{a.out}/meta.json", "w"))
+json.dump(dict(n=len(files), loop=loop, W=W, H=H, start=start), open(f"{a.out}/meta.json", "w"))

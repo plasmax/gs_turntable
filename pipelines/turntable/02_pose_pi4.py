@@ -11,6 +11,7 @@ from PIL import Image
 ap = argparse.ArgumentParser()
 ap.add_argument("out"); ap.add_argument("--size", type=int, default=672)
 ap.add_argument("--stride", type=int, default=1); ap.add_argument("--suffix", default="")
+ap.add_argument("--chunk", type=int, default=0, help="max frames per Pi4 pass; 0 = all at once, splitting on out-of-memory")
 a = ap.parse_args()
 meta = json.load(open(f"{a.out}/meta.json")); W, H = meta["W"], meta["H"]
 n = meta["n"] - (1 if meta["loop"] else 0)
@@ -24,10 +25,64 @@ al = np.stack([np.asarray(Image.open(rg[i]).crop((x0, y0, x0 + S, y0 + S)).resiz
 from pi4 import Pi4
 local = os.environ.get("GS_MODELS") and os.path.join(os.environ["GS_MODELS"], "pi4")  # offline copy from scripts/download_models.py
 net = (Pi4.from_pretrained(local) if local else Pi4.from_pretrained("yyfz233/Pi4", revision="59f307317fb630c9c5a5aa635038d98ed106aaf5")).cuda().eval()
-x = torch.from_numpy(rgb.copy()).permute(0, 3, 1, 2).float().div(255)[None].cuda()
-with torch.inference_mode():  # no autograd graph: 125+ frames fit a 16 GB card
-    p = net(x)
-lp = p["local_points"][0].float().cpu().numpy(); c2w = p["camera_poses"][0].float().cpu().numpy(); conf = p["confidence"][0].float().cpu().numpy()
+
+
+def run(ids):
+    x = torch.from_numpy(rgb[ids]).permute(0, 3, 1, 2).float().div(255)[None].cuda()
+    with torch.inference_mode():
+        p = net(x)
+    return [p[k][0].float().cpu().numpy() for k in ("local_points", "camera_poses", "confidence")]
+
+
+def in_passes(T, size):
+    """All T frames, at most `size` per Pi4 pass (memory grows with frame count: about 125 at 672 px fit 16 GB).
+
+    Every pass holds the same anchor frames spread round the orbit plus an interleaved share of the rest, so each pass
+    sees the whole turn. Later passes are moved into the first pass's frame by a similarity fitted on the anchors.
+    """
+    if size >= T:
+        return run(np.arange(T))
+    anchors = np.unique(np.linspace(0, T, max(8, size // 4), endpoint=False).astype(int))
+    rest = np.setdiff1d(np.arange(T), anchors)
+    G = -(-len(rest) // (size - len(anchors)))
+    lp, c2w, conf = np.empty((T, sz, sz, 3), np.float32), np.empty((T, 4, 4), np.float32), np.empty((T, sz, sz), np.float32)
+    na = len(anchors)
+    for g in range(G):
+        ids = np.r_[anchors, rest[g::G]]
+        l, c, f = run(ids)
+        A = c[:na].astype(np.float64)
+        if g == 0:
+            ref, s, R, t = A, 1., np.eye(3), np.zeros(3)
+        else:  # world_ref = s R world_g + t; camera-frame points scale by s
+            U, _, Vt = np.linalg.svd(sum(r[:3, :3] @ q[:3, :3].T for r, q in zip(ref, A)))
+            R = U @ np.diag([1, 1, np.linalg.det(U @ Vt)]) @ Vt
+            P, Q = A[:, :3, 3] @ R.T, ref[:, :3, 3]
+            s = ((P - P.mean(0)) * (Q - Q.mean(0))).sum() / ((P - P.mean(0)) ** 2).sum()
+            t = Q.mean(0) - s * P.mean(0)
+            pos = np.sqrt(((s * P + t - Q) ** 2).sum(1).mean()) / np.linalg.norm(Q - Q.mean(0), axis=1).mean()
+            ang = [np.degrees(np.arccos(np.clip((np.trace(r[:3, :3].T @ R @ q[:3, :3]) - 1) / 2, -1, 1))) for r, q in zip(ref, A)]
+            print(f"pass {g + 1}/{G}: anchor misfit {pos * 100:.2f}% of orbit radius, {np.median(ang):.2f} deg median rotation", flush=True)
+        c[:, :3, :3] = R @ c[:, :3, :3]
+        c[:, :3, 3] = s * c[:, :3, 3] @ R.T + t
+        k = slice(None) if g == 0 else slice(na, None)  # anchors keep the first pass's estimate
+        lp[ids[k]], c2w[ids[k]], conf[ids[k]] = l[k] * s, c[k], f[k]
+    return lp, c2w, conf
+
+
+size = a.chunk or len(idx)
+while True:
+    oom = False
+    try:
+        print(f"Pi4: {len(idx)} frames, at most {size} per pass", flush=True)
+        lp, c2w, conf = in_passes(len(idx), size)
+        break
+    except torch.cuda.OutOfMemoryError:
+        oom = True
+    if oom:  # outside the except block, so the failed pass's tensors are already released
+        torch.cuda.empty_cache()
+        if size <= 32:
+            raise SystemExit("Pi4 runs out of GPU memory even at 32 frames per pass; try a smaller --size")
+        size = max(32, int(size * .6))
 # shared focal (px @ sz) by robust fit of u = f X/Z + c on the object
 v, u = np.mgrid[0:sz, 0:sz].astype(np.float32); c = (sz - 1) / 2
 m = (al > 0.9) & (lp[..., 2] > 1e-4)

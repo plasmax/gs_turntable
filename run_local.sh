@@ -19,4 +19,5 @@ else
     "$here/apptainer-python-main" $p/02_pose_colmap.py "$out/work"
 fi
 "$here/apptainer-python-main" $p/03_train.py "$out/work" "$out" --pose "pose_$backend.npz" "$@"
-echo "done: $out/splat.ply"
+"$here/apptainer-python-main" scripts/export_nuke.py "$out"
+echo "done: $out/splat.ply, Nuke camera: $out/cameras.nk"
