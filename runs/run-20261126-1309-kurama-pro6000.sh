@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Kurama turnaround (1920x1080, 250 frames) -> gaussian splat on one RTX Pro 6000, highest-quality settings.
 # Run from any shell, tcsh included:
-#   /job/nocturne/dev/sandbox/sandbox_mlast/work/mlast/git/gs_turntable/runs/run-20261126-1309-kurama-pro6000.sh [colmap|pi4]
+#   /job/nocturne/dev/sandbox/sandbox_mlast/work/mlast/git/gs_turntable/runs/run-20261126-1309-kurama-pro6000.sh [colmap|pi4] [OUT_DIR]
+# Pause:  touch OUT_DIR/STOP   (training checkpoints within ~100 iterations, then the job exits 75)
+# Resume: run this script again with the same backend and that OUT_DIR; finished stages are skipped.
 # colmap (default) is commercially usable; pi4 is CC BY-NC 4.0, non-commercial.
 # Writes out/kurama_<backend>_<YYYYmmdd-HHMMSS>/ (splat.ply, cameras.nk, splat_yup.ply, metrics.json, run.log).
 # Estimate 2.5-4 h, almost all training; the log prints elapsed seconds every 1000 of the 60000 iterations.
@@ -16,10 +18,12 @@ export GS_TURNTABLE_MAIN_IMAGE=$sifs/gs-turntable-main.sif
 export GS_TURNTABLE_PI4_IMAGE=$sifs/gs-turntable-pi4.sif
 export GS_TURNTABLE_MODELS=/job/mlearn/dev/sandbox/sandbox_mlast/work/mlast/git/models
 
-out=$repo/out/kurama_${backend}_$(date +%Y%m%d-%H%M%S)
+out="${2:-$repo/out/kurama_${backend}_$(date +%Y%m%d-%H%M%S)}"
 mkdir -p "$out"
+out=$(cd "$out" && pwd)  # a relative OUT_DIR still works after the cd below
 cd "$repo"
-exec > >(tee "$out/run.log") 2>&1
+exec > >(tee -a "$out/run.log") 2>&1
+[[ -n ${2:-} ]] && echo "=== resuming $(date) ==="
 
 gpu=$(nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader | head -1)
 echo "host $(hostname)  gpu $gpu  commit $(git rev-parse --short HEAD 2>/dev/null || echo ?)  backend $backend"

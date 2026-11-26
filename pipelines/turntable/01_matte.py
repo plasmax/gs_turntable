@@ -12,6 +12,7 @@ from pymatting import estimate_foreground_ml
 ap = argparse.ArgumentParser()
 ap.add_argument("video"); ap.add_argument("out")
 ap.add_argument("--res", type=int, default=2048)
+ap.add_argument("--stop", help="pause file: when it appears, finish the current frame and exit 75 (default OUT/STOP)")
 ap.add_argument("--loop_thresh", type=float, default=4.0, help="mean abs diff under which the last frame is a repeat of the first")
 a = ap.parse_args()
 a.video = re.sub(r"%0?(\d*)d", lambda m: "#" * int(m.group(1) or 1), a.video, count=1)  # shot.%04d.png == shot.####.png
@@ -32,6 +33,11 @@ files = sorted(glob.glob(f"{a.out}/raw/*.png"))
 f0, f1 = (cv2.imread(files[i]).astype(np.float32) for i in (0, -1))
 loop = float(np.abs(f0 - f1).mean()) < a.loop_thresh
 print("frames", len(files), "loop closed:", loop, "diff", float(np.abs(f0 - f1).mean()))
+H, W = f0.shape[:2]
+stop = a.stop or f"{a.out}/STOP"
+done = [f for f in files if os.path.exists(f"{a.out}/rgba/{os.path.basename(f)}")]
+if done:
+    print(f"resuming: {len(done)}/{len(files)} frames already matted")
 
 REV = "5d6b6f8adcb5b417c871b1d84ceaae9871355b7f"
 local = os.path.join(os.environ.get("GS_MODELS", ""), "birefnet_hr_matting")  # offline copy from scripts/download_models.py
@@ -39,6 +45,12 @@ src = dict(pretrained_model_name_or_path=local) if os.environ.get("GS_MODELS") e
 net = AutoModelForImageSegmentation.from_pretrained(**src, trust_remote_code=True).cuda().eval().half()
 mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1).cuda(); std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1).cuda()
 for f in tqdm(files, mininterval=10):
+    b = os.path.basename(f)
+    if os.path.exists(f"{a.out}/rgba/{b}"):  # written last, so a frame with rgba is complete
+        continue
+    if os.path.exists(stop):
+        print(f"STOP found ({stop}): paused before {b}; rerun the same command to resume", flush=True)
+        raise SystemExit(75)
     im = np.array(Image.open(f).convert("RGB")); H, W = im.shape[:2]
     x = torch.from_numpy(cv2.resize(im, (a.res, a.res), interpolation=cv2.INTER_CUBIC)).cuda().permute(2, 0, 1).float() / 255
     with torch.no_grad():
@@ -50,8 +62,10 @@ for f in tqdm(files, mininterval=10):
         k = 1 + np.argmax(st[1:, cv2.CC_STAT_AREA]); al = al * (lab == k)
     al[al < 0.02] = 0
     fg = estimate_foreground_ml(im.astype(np.float64) / 255, al.astype(np.float64))
-    rgba = np.dstack([np.clip(fg, 0, 1), al]); b = os.path.basename(f)
-    Image.fromarray((rgba * 255 + .5).astype(np.uint8)).save(f"{a.out}/rgba/{b}")
+    rgba = np.dstack([np.clip(fg, 0, 1), al])
     g = fg * al[..., None] + 0.5 * (1 - al[..., None])
-    Image.fromarray((np.clip(g, 0, 1) * 255 + .5).astype(np.uint8)).save(f"{a.out}/grey/{b}")
+    # write-then-rename, grey before rgba: a frame interrupted mid-write is redone, never half-read
+    for d, arr in (("grey", np.clip(g, 0, 1)), ("rgba", rgba)):
+        Image.fromarray((arr * 255 + .5).astype(np.uint8)).save(f"{a.out}/{d}/{b}.part", format="PNG")
+        os.replace(f"{a.out}/{d}/{b}.part", f"{a.out}/{d}/{b}")
 json.dump(dict(n=len(files), loop=loop, W=W, H=H, start=start), open(f"{a.out}/meta.json", "w"))

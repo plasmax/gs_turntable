@@ -9,6 +9,9 @@ Outputs land in `out/<video name>_<backend>/`: `splat.ply`, `splat.sog`, `splat.
 Nuke: `python scripts/export_nuke.py out/<name>` writes `cameras.nk` (a Camera2 node to paste), `cameras.chan` and
 `splat_yup.ply`, the splat turned into Nuke's Y-up world so it lines up with that camera (`run_local.sh` does this itself).
 
+Pause a local run with `touch OUT_DIR/STOP` and resume by rerunning the same `run_local.sh` command: finished stages are
+skipped, matting continues from the next frame and training from its checkpoint (also written every 10k iterations).
+
 Offline, through Apptainer instead of Colab: see [docs/apptainer.md](docs/apptainer.md). The images run on Ampere to Blackwell
 GPUs (A4000, A6000, RTX Pro 6000, ...).
 

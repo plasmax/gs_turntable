@@ -31,6 +31,8 @@ ap.add_argument("--lam_depth", type=float, default=0.1)
 ap.add_argument("--lam_flat", type=float, default=0.001)
 ap.add_argument("--holdout", type=int, default=0, help="hold out every Nth frame for evaluation")
 ap.add_argument("--seed", type=int, default=0)
+ap.add_argument("--stop", help="pause file: when it appears, checkpoint and exit 75; rerun to resume (default OUT/STOP)")
+ap.add_argument("--ckpt_every", type=int, default=10000, help="also checkpoint every N iterations (0: only on pause)")
 a = ap.parse_args()
 os.makedirs(a.out, exist_ok=True)
 torch.manual_seed(a.seed)
@@ -263,10 +265,53 @@ def gt(i, bg):
     return g[..., :3] * al + (1 - al) * bg, al
 
 
+# ---------- checkpoint / resume ----------
+CKPT, STOP = f"{a.out}/train_ckpt.pt", a.stop or f"{a.out}/STOP"
+SAME = [k for k in vars(a) if k not in ("work", "out", "stop", "ckpt_every")]  # must match to resume
+
+
+def save_ckpt(it):
+    torch.save(dict(it=it, args={k: getattr(a, k) for k in SAME}, par={k: v.data for k, v in par.items()},
+                    opt={k: o.state_dict() for k, o in opt.items()}, sched=sched.state_dict(), st=st,
+                    fr=fr.state_dict(), fopt=fopt.state_dict(), fsched=fsched.state_dict(), rng=rng.bit_generator.state,
+                    torch_rng=torch.get_rng_state(), cuda_rng=torch.cuda.get_rng_state()), CKPT + ".part")
+    os.replace(CKPT + ".part", CKPT)  # an interrupted save never replaces a good checkpoint
+
+
+start = 0
+if os.path.exists(CKPT):
+    ck = torch.load(CKPT, map_location="cpu", weights_only=False)  # optimizers place their state; steps stay on CPU
+    diff = {k: (ck["args"].get(k), getattr(a, k)) for k in SAME if ck["args"].get(k) != getattr(a, k)}
+    if diff:
+        raise SystemExit(f"{CKPT} was made with other settings {diff} (saved, now); delete it to start over")
+    par = nn.ParameterDict({k: nn.Parameter(v.to(dev)) for k, v in ck["par"].items()})
+    opt = {k: torch.optim.Adam([par[k]], lr=lr[k], eps=1e-15) for k in par.keys()}
+    for k, o in opt.items():
+        o.load_state_dict(ck["opt"][k])
+    sched = torch.optim.lr_scheduler.ExponentialLR(opt["means"], 0.01 ** (1 / a.iters))
+    sched.load_state_dict(ck["sched"])
+    strat.check_sanity(par, opt)
+    st = {k: v.to(dev) if torch.is_tensor(v) else v for k, v in ck["st"].items()}
+    fr.load_state_dict(ck["fr"])
+    fopt.load_state_dict(ck["fopt"])
+    fsched.load_state_dict(ck["fsched"])
+    rng.bit_generator.state = ck["rng"]
+    torch.set_rng_state(ck["torch_rng"])
+    torch.cuda.set_rng_state(ck["cuda_rng"])
+    start = ck["it"]
+    del ck
+    print(f"resumed at iteration {start} with {len(par['means'])} gaussians", flush=True)
+
 # ---------- train ----------
 t0 = time.time()
 depth_end = a.iters * .6
-for it in range(a.iters):
+for it in range(start, a.iters):
+    if it > start and it % 100 == 0 and os.path.exists(STOP):
+        save_ckpt(it)
+        print(f"STOP found ({STOP}): checkpointed at iteration {it}; rerun the same command to resume", flush=True)
+        raise SystemExit(75)
+    if a.ckpt_every and it > start and it % a.ckpt_every == 0:
+        save_ckpt(it)
     i = int(rng.choice(N, p=prob))
     deg = min(a.sh, it // 1500)
     bg = torch.rand(3, device=dev) if rng.random() < .8 else torch.full((3,), .5, device=dev)
@@ -386,4 +431,7 @@ with torch.no_grad():
         r = render(R, t, None, bg=bg, focal=fpx, size=(720, 720), pp=(360, 360))[0].clamp(0, 1)
         wr.append_data((r.cpu().numpy() * 255).astype(np.uint8))
     wr.close()
+open(f"{a.out}/.train_done", "w").close()  # run_local.sh skips training on a rerun
+if os.path.exists(CKPT):
+    os.remove(CKPT)  # finished: the checkpoint (several GB at millions of gaussians) is no longer needed
 print("saved", a.out, len(arr))
