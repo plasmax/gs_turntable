@@ -2,7 +2,8 @@
 
 * poses + shared focal refined jointly; angle-balanced frame sampling (uneven spin speed)
 * smooth per-frame deformation + colour affine, used only during training: absorbs pose drift, breathing and
-  flicker, so the exported canonical splat stays sharp instead of averaging
+  flicker, so the exported canonical splat stays sharp instead of averaging. Half the iterations (--canon_frac)
+  render undeformed, or the deformation soaks up camera/focal error and the exported splat falls apart
 * SH evaluated with jittered elevation: studio light is fixed to the camera, so shading is a function of orbit
   azimuth; jitter stops SH exploding at elevations the video never shows
 * soft-alpha supervision on random backgrounds: no floaters, clean translucent edges
@@ -25,6 +26,9 @@ ap.add_argument("--sh", type=int, default=2)
 ap.add_argument("--el_jitter", type=float, default=50., help="deg; 2-sigma of elevation jitter for SH lookup")
 ap.add_argument("--deform", type=int, default=1)
 ap.add_argument("--lam_def", type=float, default=0.001)
+ap.add_argument("--canon_frac", type=float, default=0.5,
+                help="share of iterations rendered without deformation, so the exported (undeformed) splat and the cameras "
+                     "must fit the images themselves; 0 lets the deformation absorb camera and focal error")
 ap.add_argument("--lam_alpha", type=float, default=0.3)
 ap.add_argument("--lam_lpips", type=float, default=0.1)
 ap.add_argument("--lam_depth", type=float, default=0.1)
@@ -213,10 +217,10 @@ def sh_basis(v, deg):
     return torch.stack(b, -1)
 
 
-def render(R, t, i=None, deg=None, jitter=0., bg=None, focal=None, size=None, pp=None, want_depth=False):
+def render(R, t, i=None, deg=None, jitter=0., bg=None, focal=None, size=None, pp=None, want_depth=False, deform=True):
     deg = a.sh if deg is None else deg
     x, q, dx = par["means"], par["quats"], None
-    if i is not None and a.deform:
+    if i is not None and a.deform and deform:
         dx, dr = fr.deform(x.detach(), i)
         x = x + dx
         q = qmul(torch.cat([torch.ones_like(dr[:, :1]), dr], -1), F.normalize(q, dim=-1))
@@ -335,7 +339,8 @@ for it in range(start, a.iters):
     jit = float(np.clip(rng.normal(0, a.el_jitter / 2), -75, 75)) if a.el_jitter and rng.random() < .7 else 0.
     use_d = a.lam_depth > 0 and it < depth_end
     R, t = pose(i)
-    rgb, al, dep, info, dx = render(R, t, i if it > 1500 else None, deg, jit, bg, want_depth=use_d)
+    canon = a.canon_frac > 0 and rng.random() < a.canon_frac  # still per-frame colour; it is zero-mean
+    rgb, al, dep, info, dx = render(R, t, i if it > 1500 else None, deg, jit, bg, want_depth=use_d, deform=not canon)
     y, ya = gt(i, bg)
     strat.step_pre_backward(par, opt, st, it, info)
     loss = .8 * (rgb - y).abs().mean() + .2 * (1 - ssim(rgb, y)) + a.lam_alpha * (al - ya).abs().mean()
@@ -369,7 +374,8 @@ for it in range(start, a.iters):
     sched.step()
     fsched.step()
     if it % 1000 == 0:
-        mdx = 0 if dx is None else dx.norm(dim=-1).mean().item()
+        with torch.no_grad():
+            mdx = fr.deform(par["means"], i)[0].norm(dim=-1).mean().item() if a.deform and it > 1500 else 0
         print(f"it {it} loss {loss.item():.4f} n={len(par['means'])} focal x{fr.lf.exp().item():.4f} rot={np.degrees(fr.rot.norm(dim=-1).mean().item()):.3f}deg trn={fr.trn.norm(dim=-1).mean().item():.4f} |dx|={mdx:.4f} peak {torch.cuda.max_memory_allocated() / 2**30:.1f}GB {time.time()-t0:.0f}s", flush=True)
 
 
