@@ -27,3 +27,7 @@ Y-up with feet on y=0 like splat_yup.ply. No GPU needed.
 ```tcsh
 go /job/nocturne/dev/sandbox/sandbox_mlast/work/mlast/git/gs_turntable && module unload fortress && git pull && setenv GS_TURNTABLE_MAIN_IMAGE /job/mlearn/dev/sandbox/sandbox_mlast/work/mlast/git/sifs/pro6000/gs-turntable-main.sif && setenv GS_TURNTABLE_MODELS /job/mlearn/dev/sandbox/sandbox_mlast/work/mlast/git/models && ./apptainer-python-main scripts/export_seeds.py out/kurama_colmap/work out/kurama_pi4/work
 ```
+
+## Results
+- out/kurama_pi4 (pi4 cameras, overnight settings, --canon_frac 0): not really any better than kurama_colmap_repro,
+  although its focal stayed ~x0.999 and |dx| ~0.008. Camera solve is not the quality bottleneck; keep colmap.
