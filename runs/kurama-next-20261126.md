@@ -31,3 +31,5 @@ go /job/nocturne/dev/sandbox/sandbox_mlast/work/mlast/git/gs_turntable && module
 ## Results
 - out/kurama_pi4 (pi4 cameras, overnight settings, --canon_frac 0): not really any better than kurama_colmap_repro,
   although its focal stayed ~x0.999 and |dx| ~0.008. Camera solve is not the quality bottleneck; keep colmap.
+- kr_c05, kr_d0, kr_1m (overnight 2026-11-26/27): only kr_1m (--cap 1000000) was marginally better than
+  kurama_colmap_repro; canon_frac 0.5 and deform 0 were not.

@@ -44,6 +44,9 @@ Exported splat is the CANONICAL one; `train_canonical` vs `train_deformed` gap i
 | out/kurama_colmap_f0 (work symlinked to 140857) | HQ + canon_frac 0.5 + focal_lr 0 | 1.0000 / 1.662 / 0.0285 / 0.1306 | "still terrible" |
 | out/kurama_colmap_repro (work -> kurama_colmap, new SIF, commit 0ad5aeb, A6000) | overnight settings + canon_frac 0 | 0.9606 / 0.959 / 0.0071 / 0.041 | REPRODUCES overnight: canonical 20.73 dB, deformed 32.56 dB, 24 min. Log: out/log_261126_2314.md |
 | out/kurama_pi4 (own matting from 02:38; pi4 pose stage + train) | overnight settings + canon_frac 0 | ~0.999 / ? / ? / ~0.008 | user: "not really any better than colmap_repro" despite near-1 focal and small dx |
+| out/kr_c05 (work -> kurama_colmap) | repro + canon_frac 0.5 | ? | user: no better than colmap_repro |
+| out/kr_d0 (work -> kurama_colmap) | repro + deform 0 | ? | user: no better than colmap_repro |
+| out/kr_1m (work -> kurama_colmap) | repro + cap 1M | ? | user: only one MARGINALLY better than colmap_repro |
 
 Overnight log for reference: loss ~0.01-0.05 throughout; rot 0.35deg at 2k -> 1.10deg at 29k; trn 0.004 -> 0.008; |dx| 0.02-0.05.
 f0 log: n hits 3M by it 8000; loss 0.07-0.31 from it 8000 (spikes 0.28/0.31) - far above overnight; rot/trn climb
@@ -75,7 +78,7 @@ Log fields: `focal xF` = training's multiplier on the pose stage focal; `|dx|` =
 Three single-change variants from the repro baseline, each into its own out/ dir with work -> ../kurama_colmap/work:
 `kr_c05` (--canon_frac 0.5), `kr_d0` (--deform 0), `kr_1m` (--cap 1000000, 30k iters). Compare `train_canonical`
 fgPSNR in metrics.json and compare.mp4. Then stack --cap 1M and --sh 3 on the winner, staying at 30k iterations.
-Not yet run by the user (as of this handoff).
+All three ran overnight 2026-11-26/27: only kr_1m was marginally better than colmap_repro; kr_c05 and kr_d0 were not.
 
 Seed clouds: `scripts/export_seeds.py WORK...` (commit 3d3771a) writes seeds_<b>_all/_used.ply and cams_<b>.ply in the
 splat_yup.ply world; command in the same runs file. Only tested on synthetic data locally.
